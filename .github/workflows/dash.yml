@@ -1,0 +1,41 @@
+name: dashboard
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # keepalive commit
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install pillow==13.0.0
+      - run: python render.py out/dash.png
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: out
+      - id: deployment
+        uses: actions/deploy-pages@v4
+      # GitHub disables cron in public repos after 60 days without commits
+      - run: |
+          if [ $(( $(date +%s) - $(git log -1 --format=%ct) )) -gt 2592000 ]; then
+            git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit --allow-empty -m keepalive
+            git push
+          fi
