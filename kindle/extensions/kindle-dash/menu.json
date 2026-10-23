@@ -1,0 +1,12 @@
+{
+	"items": [
+		{
+			"name": "Weather Dashboard",
+			"items": [
+				{ "name": "1. Chẩn đoán (ghi log)", "action": "./bin/dash.sh", "params": "diag" },
+				{ "name": "2. Thử hiện 1 lần", "action": "./bin/dash.sh", "params": "once" },
+				{ "name": "3. Bật dashboard (giữ nút nguồn 15s để thoát)", "action": "./bin/dash.sh", "params": "start", "exitmenu": true }
+			]
+		}
+	]
+}
