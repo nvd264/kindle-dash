@@ -1,5 +1,5 @@
 #!/bin/sh
-# Weather dashboard for Kindle PW4 (jailbroken), launched from KUAL.
+# Weather dashboard for Kindle PW4 (jailbroken), launched by the scriptlets in documents/.
 #   diag  - dump device info to the log (read it over USB)
 #   once  - fetch and show the dashboard once, UI keeps running
 #   start - stop the Kindle UI and refresh forever, suspending in between.
@@ -46,6 +46,7 @@ case "$1" in
 diag)
     {
         echo "== diag $(date)"
+        id
         cat /etc/prettyversion.txt
         uname -a
         for r in /sys/class/rtc/rtc*; do echo "$r name=$(cat "$r/name") wakealarm=$(cat "$r/wakealarm")"; done
