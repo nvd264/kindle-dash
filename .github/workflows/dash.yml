@@ -1,7 +1,7 @@
 name: dashboard
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "13,43 * * * *" # off-peak minutes; GitHub drops many :00/:30 runs
   workflow_dispatch:
   push:
     branches: [main]
