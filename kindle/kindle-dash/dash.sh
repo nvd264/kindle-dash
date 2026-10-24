@@ -3,8 +3,11 @@
 #   diag  - dump device info to the log (read it over USB)
 #   once  - fetch and show the dashboard once, UI keeps running
 #   start - stop the Kindle UI and refresh forever, suspending in between.
-#           To exit: hold the power button ~15s to reboot.
+#   start screen - second screen for the PC (run pc/screen.py there first).
+#           To exit either: hold the power button ~15s to reboot.
 URL="https://nvd264.github.io/kindle-dash/dash.png"
+# shortcut: PC's LAN IP is hardcoded; reserve it in the router or edit here if it changes
+SCREEN_URL="http://192.168.1.170:8765/screen.png"
 INTERVAL=1800 # seconds, matches the GitHub Actions cron
 LOG=/mnt/us/kindle-dash.log
 IMG=/tmp/dash.png
@@ -61,7 +64,8 @@ once)
     show
     ;;
 start)
-    if command -v setsid >/dev/null; then setsid sh "$0" loop; else sh "$0" loop; fi >>"$LOG" 2>&1 </dev/null &
+    mode=${2:-loop}
+    if command -v setsid >/dev/null; then setsid sh "$0" "$mode"; else sh "$0" "$mode"; fi >>"$LOG" 2>&1 </dev/null &
     ;;
 loop)
     log "dashboard started"
@@ -72,6 +76,22 @@ loop)
         show
         sleep 10 # let the screen finish refreshing before suspend
         suspend_until_next
+    done
+    ;;
+screen)
+    log "second screen started"
+    lipc-set-prop com.lab126.powerd preventScreenSaver 1
+    stop lab126_gui
+    sleep 5
+    n=0
+    while true; do
+        if curl -fs --max-time 5 -o "$IMG.new" "$SCREEN_URL" && ! cmp -s "$IMG.new" "$IMG"; then
+            mv "$IMG.new" "$IMG"
+            n=$((n + 1))
+            # partial refreshes are fast but ghost; flash a full one every 30 frames
+            if [ $((n % 30)) -eq 0 ]; then eips -f -g "$IMG"; else eips -g "$IMG"; fi
+        fi
+        sleep 1
     done
     ;;
 esac
