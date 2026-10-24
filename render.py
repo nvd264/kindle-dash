@@ -17,6 +17,12 @@ URL = (
     "&hourly=temperature_2m,precipitation_probability"
     "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset"
 )
+AQ_URL = (
+    "https://air-quality-api.open-meteo.com/v1/air-quality"
+    "?latitude=10.84&longitude=106.83&timezone=Asia/Ho_Chi_Minh&current=us_aqi,pm2_5"
+)
+# US AQI bands (upper bound, label)
+AQI_BANDS = [(50, "Good"), (100, "Moderate"), (150, "Poor"), (200, "Unhealthy"), (300, "Very poor"), (9999, "Hazardous")]
 # WMO weather codes (snow codes omitted: not happening in Saigon)
 WMO = {
     0: "Clear", 1: "Mostly clear", 2: "Partly cloudy", 3: "Overcast", 45: "Fog", 48: "Fog",
@@ -34,7 +40,7 @@ def font(size, bold=False):
     return ImageFont.truetype(str(FONTS / f"BeVietnamPro-{'Bold' if bold else 'Regular'}.ttf"), size)
 
 
-def render(data):
+def render(data, aq=None):
     cur, hourly, daily = data["current"], data["hourly"], data["daily"]
     now = datetime.fromisoformat(cur["time"])
     img = Image.new("L", (W, H), 255)
@@ -46,13 +52,18 @@ def render(data):
 
     d.text((M, 190), f"{round(cur['temperature_2m'])}°", font=font(240, True), fill=0)
     x = 580
-    d.text((x, 240), WMO.get(cur["weather_code"], "—"), font=font(52, True), fill=0)
-    for i, line in enumerate([
+    d.text((x, 230), WMO.get(cur["weather_code"], "—"), font=font(52, True), fill=0)
+    lines = [
         f"Feels like {round(cur['apparent_temperature'])}°",
         f"Humidity {cur['relative_humidity_2m']}%",
         f"Wind {round(cur['wind_speed_10m'])} km/h",
-    ]):
-        d.text((x, 330 + i * 56), line, font=font(38), fill=DARK)
+    ]
+    if aq:
+        aqi = aq["us_aqi"]
+        label = next(name for top, name in AQI_BANDS if aqi <= top)
+        lines.append(f"AQI {aqi} · {label}")
+    for i, line in enumerate(lines):
+        d.text((x, 310 + i * 52), line, font=font(38), fill=DARK)
 
     d.line((M, 530, W - M, 530), fill=LIGHT, width=3)
     d.text((M, 556), "Next 12 hours · chance of rain", font=font(32), fill=MID)
@@ -94,6 +105,12 @@ if __name__ == "__main__":
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "out/dash.png")
     with urllib.request.urlopen(URL, timeout=30) as r:
         data = json.load(r)
+    try:
+        with urllib.request.urlopen(AQ_URL, timeout=30) as r:
+            aq = json.load(r)["current"]
+    except Exception as e:  # air quality is optional; never lose the weather over it
+        print("air quality unavailable:", e)
+        aq = None
     out.parent.mkdir(parents=True, exist_ok=True)
-    render(data).save(out)
+    render(data, aq).save(out)
     print(out)
