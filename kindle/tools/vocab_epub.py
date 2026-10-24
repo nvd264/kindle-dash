@@ -7,12 +7,12 @@ Each word becomes two pages: front (picture, word, IPA) and back (meaning, examp
 import io
 import json
 import sys
-import zipfile
-import xml.etree.ElementTree as ET
 from html import escape
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
+
+from epub import write_epub, xhtml
 
 EMOJI_FONT = "/usr/share/fonts/noto/NotoColorEmoji.ttf"
 CARDS_PER_FILE = 50  # big XHTML chapters make KOReader slow to paginate on the PW4
@@ -35,12 +35,6 @@ body { font-family: serif; margin: 0; }
 .col { margin-top: 1em; }
 .credit { margin-top: 2.5em; font-size: 0.7em; color: #666; }
 """
-
-
-def xhtml(title, body):
-    return (f'<?xml version="1.0" encoding="utf-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml" '
-            f'xmlns:epub="http://www.idpf.org/2007/ops"><head><title>{escape(title)}</title>'
-            f'<link rel="stylesheet" href="style.css"/></head><body>{body}</body></html>')
 
 
 def gray_jpeg(src):
@@ -88,7 +82,7 @@ def build(repo, out):
     decks, words = data["decks"], data["words"]
     emoji_font = ImageFont.truetype(EMOJI_FONT, 109)  # the only size this bitmap font has
 
-    files, manifest, spine, nav = {}, [], [], []
+    files, spine, nav = {}, [], []
     for d, deck in enumerate(decks):
         deck_words = [w for w in words if w[8] == d]
         assert len(deck_words) == deck["count"], (deck["id"], len(deck_words))
@@ -104,32 +98,11 @@ def build(repo, out):
                     files[pic] = emoji_png(w[9], emoji_font)
                 body += card(w, deck["name"], i, deck["count"], pic)
             name = f"deck{d}-{part // CARDS_PER_FILE}.xhtml"
-            files[name] = xhtml(deck["name"], body).encode()
-            ET.fromstring(files[name])  # self-check: well-formed XHTML or crash here
+            files[name] = xhtml(deck["name"], body)
             spine.append(name)
 
-    files["nav.xhtml"] = xhtml("Contents", f'<nav epub:type="toc"><h1>Vocabulary {len(words)}</h1><ol>{"".join(nav)}</ol></nav>').encode()
     files["style.css"] = CSS.encode()
-    for i, name in enumerate(files):
-        kind = {"xhtml": "application/xhtml+xml", "css": "text/css", "jpg": "image/jpeg", "png": "image/png"}[name.rsplit(".", 1)[1]]
-        props = ' properties="nav"' if name == "nav.xhtml" else ""
-        manifest.append(f'<item id="i{i}" href="{name}" media-type="{kind}"{props}/>')
-    ids = {name: f"i{i}" for i, name in enumerate(files)}
-    opf = ('<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">'
-           '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">nvd264-vocab-3000</dc:identifier>'
-           f'<dc:title>Vocabulary {len(words)} — Flashcards</dc:title><dc:creator>nvd264</dc:creator><dc:language>en</dc:language>'
-           '<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta></metadata>'
-           f'<manifest>{"".join(manifest)}</manifest><spine>{"".join(f"<itemref idref=\"{ids[s]}\"/>" for s in spine)}</spine></package>')
-
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)  # must be first, uncompressed
-        z.writestr("META-INF/container.xml", '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
-                   '<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')
-        z.writestr("OEBPS/content.opf", opf)
-        for name, blob in files.items():
-            z.writestr(f"OEBPS/{name}", blob)
-    print(f"{out}: {len(words)} cards, {len(spine)} chapters, {out.stat().st_size // 1024} KB")
+    write_epub(out, "nvd264-vocab-3000", f"Vocabulary {len(words)} — Flashcards", files, spine, f'<ol>{"".join(nav)}</ol>')
 
 
 if __name__ == "__main__":
