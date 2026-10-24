@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Render a weather dashboard PNG for Kindle Paperwhite 4 (1072x1448, grayscale)."""
+"""Render a weather dashboard PNG for Kindle Paperwhite 4 (1072x1448, grayscale).
+
+From 23:00 to 06:00 it shows a public-domain artwork instead. --night forces that.
+"""
+import io
 import json
 import sys
+import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 W, H, M = 1072, 1448, 56
 PLACE = "District 9 · Ho Chi Minh City"
@@ -35,9 +40,58 @@ DARK, MID, LIGHT = 0x44, 0x88, 0xCC
 
 FONTS = Path(__file__).parent / "fonts"
 
+# one artist per night, rotating; all have public-domain portrait-format works at the Art Institute of Chicago
+ARTISTS = ["Katsushika Hokusai", "Utagawa Hiroshige", "Rembrandt van Rijn", "Kitagawa Utamaro",
+           "Albrecht Dürer", "James McNeill Whistler", "Vincent van Gogh", "Utagawa Kuniyoshi"]
+# AIC returns 403 unless both headers are set
+AIC_HEADERS = {"User-Agent": "kindle-dash (github.com/nvd264/kindle-dash)", "AIC-User-Agent": "kindle-dash (github.com/nvd264/kindle-dash)"}
+GRAYS = Image.new("P", (1, 1))
+GRAYS.putpalette([v for i in range(16) for v in (i * 17,) * 3])
+
 
 def font(size, bold=False):
     return ImageFont.truetype(str(FONTS / f"BeVietnamPro-{'Bold' if bold else 'Regular'}.ttf"), size)
+
+
+def fit(text, f, width):
+    if f.getlength(text) <= width:
+        return text
+    while f.getlength(text + "…") > width:
+        text = text[:-1]
+    return text.rstrip() + "…"
+
+
+def fetch(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers=AIC_HEADERS), timeout=30) as r:
+        return r.read()
+
+
+def night_art(night):
+    artist = ARTISTS[night % len(ARTISTS)]
+    query = urllib.parse.urlencode({"q": artist, "query[term][is_public_domain]": "true", "limit": 100,
+                                    "fields": "title,artist_title,date_display,image_id,thumbnail"})
+    works = [a for a in json.loads(fetch("https://api.artic.edu/api/v1/artworks/search?" + query))["data"]
+             if a.get("image_id") and a.get("artist_title") == artist
+             and (a.get("thumbnail") or {}).get("height", 0) > (a.get("thumbnail") or {}).get("width", 1)]
+    art = works[night // len(ARTISTS) % len(works)]
+    img = Image.open(io.BytesIO(fetch(f"https://www.artic.edu/iiif/2/{art['image_id']}/full/1686,/0/default.jpg")))
+    return art, img
+
+
+def render_art(art, img, cur):
+    canvas = Image.new("L", (W, H), 255)
+    img = ImageOps.autocontrast(img.convert("L"), cutoff=1)
+    img.thumbnail((W - 80, H - 220))
+    # dither to the panel's 16 grays so gradients don't band
+    img = img.convert("RGB").quantize(palette=GRAYS, dither=Image.Dither.FLOYDSTEINBERG).convert("L")
+    canvas.paste(img, ((W - img.width) // 2, 40 + (H - 220 - img.height) // 2))
+    d = ImageDraw.Draw(canvas)
+    title = art["title"].split(" (")[0]
+    d.text((M, H - 150), fit(title, font(34, True), W - 2 * M), font=font(34, True), fill=0)
+    credit = f"{art['artist_title']} · {art['date_display']}"
+    d.text((M, H - 100), fit(credit, font(28), W - 2 * M - 120), font=font(28), fill=DARK)
+    d.text((W - M, H - 100), f"{round(cur['temperature_2m'])}°", font=font(28, True), fill=0, anchor="ra")
+    return canvas
 
 
 def render(data, aq=None):
@@ -102,7 +156,8 @@ def render(data, aq=None):
 
 
 if __name__ == "__main__":
-    out = Path(sys.argv[1] if len(sys.argv) > 1 else "out/dash.png")
+    args = [a for a in sys.argv[1:] if a != "--night"]
+    out = Path(args[0] if args else "out/dash.png")
     with urllib.request.urlopen(URL, timeout=30) as r:
         data = json.load(r)
     try:
@@ -111,6 +166,14 @@ if __name__ == "__main__":
     except Exception as e:  # air quality is optional; never lose the weather over it
         print("air quality unavailable:", e)
         aq = None
+    now = datetime.fromisoformat(data["current"]["time"])
+    img = None
+    if now.hour >= 23 or now.hour < 6 or "--night" in sys.argv:
+        try:
+            # shift by 6h so the whole night (23:00-06:00) keeps one artwork
+            img = render_art(*night_art((now - timedelta(hours=6)).toordinal()), data["current"])
+        except Exception as e:  # museum down: show the weather instead
+            print("night art unavailable:", e)
     out.parent.mkdir(parents=True, exist_ok=True)
-    render(data, aq).save(out)
+    (img or render(data, aq)).save(out)
     print(out)
