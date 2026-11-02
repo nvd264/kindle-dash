@@ -8,7 +8,7 @@ import json
 import sys
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -37,6 +37,9 @@ WMO = {
 }
 # e-ink has 16 gray levels; multiples of 17 map exactly
 DARK, MID, LIGHT = 0x44, 0x88, 0xCC
+# HCM is UTC+7 year-round; the API's current.time lags the wall clock by up to ~15 min
+# (it is the model's timestamp), so stamp the render itself with the real time
+HCM = timezone(timedelta(hours=7))
 
 FONTS = Path(__file__).parent / "fonts"
 
@@ -96,7 +99,7 @@ def render_art(art, img, cur):
 
 def render(data, aq=None):
     cur, hourly, daily = data["current"], data["hourly"], data["daily"]
-    now = datetime.fromisoformat(cur["time"])
+    now = datetime.now(HCM)
     img = Image.new("L", (W, H), 255)
     d = ImageDraw.Draw(img)
 
@@ -166,7 +169,7 @@ if __name__ == "__main__":
     except Exception as e:  # air quality is optional; never lose the weather over it
         print("air quality unavailable:", e)
         aq = None
-    now = datetime.fromisoformat(data["current"]["time"])
+    now = datetime.now(HCM)
     img = None
     if now.hour >= 23 or now.hour < 6 or "--night" in sys.argv:
         try:

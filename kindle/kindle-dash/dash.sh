@@ -5,9 +5,10 @@
 #   start - stop the Kindle UI and refresh forever, suspending in between.
 #   start screen - second screen for the PC (run pc/screen.py there first).
 #           To exit either: hold the power button ~15s to reboot.
-URL="https://nvd264.github.io/kindle-dash/dash.png"
+URL="https://nvd264.github.io/kindle-dash/dash.png" # fallback; GH cron on a public repo is delayed by hours
 # shortcut: PC's LAN IP is hardcoded; reserve it in the router or edit here if it changes
 SCREEN_URL="http://192.168.1.170:8765/screen.png"
+LAN_URL="http://192.168.1.170:8766/dash.png" # pc/dashboard.py renders this every 5 min
 INTERVAL=300 # seconds, matches the GitHub Actions cron (5 min)
 LOG=/mnt/us/kindle-dash.log
 IMG=/tmp/dash.png
@@ -25,7 +26,9 @@ wait_wifi() {
 }
 
 show() {
-    if wait_wifi && curl -fsSL --max-time 60 -o "$IMG.new" "$URL"; then
+    # LAN first (fresh every 5 min), Pages as fallback when the PC is unreachable
+    if wait_wifi && { curl -fsSL --max-time 10 -o "$IMG.new" "$LAN_URL" \
+        || curl -fsSL --max-time 60 -o "$IMG.new" "$URL"; }; then
         mv "$IMG.new" "$IMG"
         eips -f -g "$IMG"
     else
