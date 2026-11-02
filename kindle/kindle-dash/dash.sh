@@ -8,7 +8,7 @@
 URL="https://nvd264.github.io/kindle-dash/dash.png"
 # shortcut: PC's LAN IP is hardcoded; reserve it in the router or edit here if it changes
 SCREEN_URL="http://192.168.1.170:8765/screen.png"
-INTERVAL=1800 # seconds, matches the GitHub Actions cron
+INTERVAL=300 # seconds, matches the GitHub Actions cron (5 min)
 LOG=/mnt/us/kindle-dash.log
 IMG=/tmp/dash.png
 

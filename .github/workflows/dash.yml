@@ -1,7 +1,8 @@
 name: dashboard
 on:
   schedule:
-    - cron: "13,43 * * * *" # off-peak minutes; GitHub drops many :00/:30 runs
+    # every 5 min, offset so runs avoid :00/:30 (GitHub drops those)
+    - cron: "3,8,13,18,23,28,33,38,43,48,53,58 * * * *"
   workflow_dispatch:
   push:
     branches: [main]
