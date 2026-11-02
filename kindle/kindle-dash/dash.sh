@@ -27,9 +27,17 @@ wait_wifi() {
 
 show() {
     # LAN first (fresh every 5 min), Pages as fallback when the PC is unreachable
-    if wait_wifi && { curl -fsSL --max-time 10 -o "$IMG.new" "$LAN_URL" \
-        || curl -fsSL --max-time 60 -o "$IMG.new" "$URL"; }; then
+    src=""
+    if wait_wifi; then
+        if curl -fsSL --max-time 10 -o "$IMG.new" "$LAN_URL"; then
+            src=LAN
+        elif curl -fsSL --max-time 60 -o "$IMG.new" "$URL"; then
+            src=Pages
+        fi
+    fi
+    if [ -n "$src" ]; then
         mv "$IMG.new" "$IMG"
+        log "fetched via $src"
         eips -f -g "$IMG"
     else
         log "fetch failed (wifi: $(lipc-get-prop com.lab126.wifid cmState))"
