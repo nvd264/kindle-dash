@@ -20,20 +20,27 @@ wait_wifi() {
     i=0
     while [ "$(lipc-get-prop com.lab126.wifid cmState)" != CONNECTED ]; do
         i=$((i + 1))
-        [ $i -gt 60 ] && return 1
+        # wifid sometimes sticks in READY forever; bouncing the radio recovers it
+        if [ $i -eq 15 ]; then
+            log "wifi stuck at $(lipc-get-prop com.lab126.wifid cmState), bouncing radio"
+            lipc-set-prop com.lab126.cmd wirelessEnable 0
+            sleep 3
+            lipc-set-prop com.lab126.cmd wirelessEnable 1
+        fi
+        [ $i -gt 45 ] && return 1
         sleep 1
     done
 }
 
 show() {
+    # cmState is only advisory: probe with curl, since that is what we actually need
+    wait_wifi || log "wifi state $(lipc-get-prop com.lab126.wifid cmState), trying anyway"
     # LAN first (fresh every 5 min), Pages as fallback when the PC is unreachable
     src=""
-    if wait_wifi; then
-        if curl -fsSL --max-time 10 -o "$IMG.new" "$LAN_URL"; then
-            src=LAN
-        elif curl -fsSL --max-time 60 -o "$IMG.new" "$URL"; then
-            src=Pages
-        fi
+    if curl -fsSL --max-time 10 -o "$IMG.new" "$LAN_URL"; then
+        src=LAN
+    elif curl -fsSL --max-time 45 -o "$IMG.new" "$URL"; then
+        src=Pages
     fi
     if [ -n "$src" ]; then
         mv "$IMG.new" "$IMG"
