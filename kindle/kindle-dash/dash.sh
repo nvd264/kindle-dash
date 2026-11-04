@@ -12,8 +12,16 @@ LAN_URL="http://192.168.1.170:8766/dash.png" # pc/dashboard.py renders this ever
 INTERVAL=300 # seconds, matches the GitHub Actions cron (5 min)
 LOG=/mnt/us/kindle-dash.log
 IMG=/tmp/dash.png
+PENDING=/tmp/kindle-dash.pending # lines written while /mnt/us is unmountable (USB drive mode)
 
-log() { echo "$(date '+%F %T') $*" >>"$LOG"; }
+# Buffer each line and flush to /mnt/us when it is writable: during USB drive mode the
+# device has no /mnt/us, and silently lost log lines are what made the last crash invisible.
+log() {
+    echo "$(date '+%F %T') $*" >>"$PENDING"
+    if [ -w /mnt/us ]; then
+        cat "$PENDING" >>"$LOG" 2>/dev/null && : >"$PENDING"
+    fi
+}
 
 wait_wifi() {
     lipc-set-prop com.lab126.cmd wirelessEnable 1
@@ -33,8 +41,9 @@ wait_wifi() {
 }
 
 show() {
+    log "show: waiting for wifi ($(lipc-get-prop com.lab126.wifid cmState))"
     # cmState is only advisory: probe with curl, since that is what we actually need
-    wait_wifi || log "wifi state $(lipc-get-prop com.lab126.wifid cmState), trying anyway"
+    wait_wifi || log "show: wifi $(lipc-get-prop com.lab126.wifid cmState), trying anyway"
     # LAN first (fresh every 5 min), Pages as fallback when the PC is unreachable
     src=""
     if curl -fsSL --max-time 10 -o "$IMG.new" "$LAN_URL"; then
@@ -46,9 +55,11 @@ show() {
     if [ -n "$src" ]; then
         mv "$IMG.new" "$IMG"
         log "fetched via $src"
-        eips -f -g "$IMG"
+        eips -f -g "$IMG" || log "eips failed ($?)"
     else
         log "fetch failed (wifi: $(lipc-get-prop com.lab126.wifid cmState))"
+        # never leave the panel blank: keep whatever frame is already on it
+        [ -f "$IMG" ] && eips -f -g "$IMG"
     fi
     bat=$(lipc-get-prop com.lab126.powerd battLevel)
     log "battery $bat%"
@@ -84,18 +95,28 @@ once)
     ;;
 start)
     mode=${2:-loop}
-    if command -v setsid >/dev/null; then setsid sh "$0" "$mode"; else sh "$0" "$mode"; fi >>"$LOG" 2>&1 </dev/null &
+    # nohup keeps the loop alive when the GUI that launched it is stopped
+    if command -v setsid >/dev/null; then
+        setsid nohup sh "$0" "$mode" >>"$LOG" 2>&1 </dev/null &
+    else
+        nohup sh "$0" "$mode" >>"$LOG" 2>&1 </dev/null &
+    fi
     ;;
 loop)
+    log "loop: start"
     lipc-set-prop com.lab126.powerd preventScreenSaver 1
     stop lab126_gui
-    log "dashboard started"
+    log "loop: gui stopped"
     sleep 5
-    show
-    sleep 10 # let the screen finish refreshing before suspend
-    suspend_until_next
-    # re-exec so edits copied to /mnt/us take effect on the next cycle, no reboot
-    exec sh "$0" loop
+    # draw something at once: stopping the GUI blanks the panel, and a crash in the
+    # first fetch used to leave it blank for good
+    [ -f "$IMG" ] || eips 0 0 "Dashboard: dang tai..."
+    while true; do
+        show
+        sleep 10 # let the screen finish refreshing before suspend
+        suspend_until_next
+        log "loop: woke up"
+    done
     ;;
 screen)
     log "second screen started"
