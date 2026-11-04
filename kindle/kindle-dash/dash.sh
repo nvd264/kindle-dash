@@ -39,7 +39,8 @@ show() {
     src=""
     if curl -fsSL --max-time 10 -o "$IMG.new" "$LAN_URL"; then
         src=LAN
-    elif curl -fsSL --max-time 45 -o "$IMG.new" "$URL"; then
+    # Pages' CDN caches for 10 min, so bust it or we re-show a stale frame
+    elif curl -fsSL --max-time 45 -H 'Cache-Control: no-cache' -o "$IMG.new" "$URL?t=$(date +%s)"; then
         src=Pages
     fi
     if [ -n "$src" ]; then
@@ -86,15 +87,15 @@ start)
     if command -v setsid >/dev/null; then setsid sh "$0" "$mode"; else sh "$0" "$mode"; fi >>"$LOG" 2>&1 </dev/null &
     ;;
 loop)
-    log "dashboard started"
     lipc-set-prop com.lab126.powerd preventScreenSaver 1
     stop lab126_gui
+    log "dashboard started"
     sleep 5
-    while true; do
-        show
-        sleep 10 # let the screen finish refreshing before suspend
-        suspend_until_next
-    done
+    show
+    sleep 10 # let the screen finish refreshing before suspend
+    suspend_until_next
+    # re-exec so edits copied to /mnt/us take effect on the next cycle, no reboot
+    exec sh "$0" loop
     ;;
 screen)
     log "second screen started"
