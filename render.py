@@ -140,17 +140,19 @@ def render(data, aq=None):
         d.text((cx, 852), f"{p}%", font=font(24), fill=DARK, anchor="ma")
 
     d.line((M, 905, W - M, 905), fill=LIGHT, width=3)
-    d.text((W - M - 190, 928), "Temp", font=font(28), fill=MID, anchor="ra")
-    d.text((W - M, 928), "Rain", font=font(28), fill=MID, anchor="ra")
+    # left-aligned columns: right-aligning ragged numbers left the rows looking off
+    cond_x, temp_x, rain_x = M + 230, W - M - 340, W - M - 105
+    d.text((temp_x, 928), "Temp", font=font(28), fill=MID)
+    d.text((rain_x, 928), "Rain", font=font(28), fill=MID)
     for i, day in enumerate(daily["time"]):
         y = 976 + i * 54
         date = datetime.fromisoformat(day)
         label = "Today" if i == 0 else f"{date:%a} {date.day}"
         d.text((M, y), label, font=font(34, True), fill=0)
-        d.text((M + 230, y), WMO.get(daily["weather_code"][i], "—"), font=font(34), fill=DARK)
+        d.text((cond_x, y), WMO.get(daily["weather_code"][i], "—"), font=font(34), fill=DARK)
         temps = f"{round(daily['temperature_2m_min'][i])}° – {round(daily['temperature_2m_max'][i])}°"
-        d.text((W - M - 190, y), temps, font=font(34, True), fill=0, anchor="ra")
-        d.text((W - M, y), f"{daily['precipitation_probability_max'][i] or 0}%", font=font(34), fill=DARK, anchor="ra")
+        d.text((temp_x, y), temps, font=font(34, True), fill=0)
+        d.text((rain_x, y), f"{daily['precipitation_probability_max'][i] or 0}%", font=font(34), fill=DARK)
 
     sun = f"Sunrise {daily['sunrise'][0][11:]} · Sunset {daily['sunset'][0][11:]}"
     d.text((M, H - 56), sun, font=font(28), fill=MID, anchor="ls")
